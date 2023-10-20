@@ -157,6 +157,15 @@ async function run() {
       }
     });
 
+    // delete product from cart
+    // DELETE
+    app.delete('/addedCart/:userId/:cartId', async (req, res) => {
+      const id = req.params.cartId;
+      const query = { _id: new ObjectId(id) };
+      const result = await cartCollection.deleteOne(query);
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 });
     console.log(
