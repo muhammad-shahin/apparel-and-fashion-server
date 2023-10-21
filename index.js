@@ -51,9 +51,7 @@ async function run() {
     // read get all products by brand name
     app.get('/products/:brandName', async (req, res) => {
       const brandName = req.params.brandName;
-      const capitalizedBrandName =
-        brandName.charAt(0).toUpperCase() + brandName.slice(1);
-      const query = { brandName: capitalizedBrandName };
+      const query = { brandName: brandName };
 
       try {
         const cursor = productsCollection.find(query);
