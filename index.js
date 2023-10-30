@@ -1,13 +1,44 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = process.env.port || 5000;
 
-// mbrandNamedleware
-app.use(cors());
+// middleware
+app.use(
+  cors({
+    origin: [
+      'http://localhost:5173',
+      'https://fashion-and-apparel-house.web.app/',
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
+
+// custom middleware to check logs
+const logger = async (req, res, next) => {
+  const start = Date.now();
+  console.log(
+    'Request from : ',
+    req.host,
+    req.originalUrl,
+    'IP Address: ',
+    req.ip,
+    'Timestamp: ',
+    new Date()
+  );
+  res.on('finish', () => {
+    const end = Date.now();
+    console.log('Request took: ', end - start, 'ms');
+  });
+
+  next();
+};
 
 app.get('/', (req, res) => {
   res.send('Product Data Will Add Soon');
@@ -23,6 +54,21 @@ const client = new MongoClient(uri, {
     strict: true,
     deprecationErrors: true,
   },
+});
+
+// generate token on authentication
+app.post('/jwt', logger, async (req, res) => {
+  const user = req.body;
+  console.log('User uid : ', user);
+  const token = jwt.sign(user, process.env.TOKEN_SECRET, { expiresIn: '1h' });
+  console.log('Token for uid: ', token);
+  res
+    .cookie('token', token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+    })
+    .send({ success: true });
 });
 
 async function run() {
@@ -116,10 +162,11 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error(error);
-        res.status(500).send('Internal server error');
+        res.status(500).send({ message: 'Internal server error' });
       }
     });
 
+    // update product details
     app.put('/products/:brandName/:productId', async (req, res) => {
       const id = req.params.productId;
       const filter = { _id: new ObjectId(id) };
