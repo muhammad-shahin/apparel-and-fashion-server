@@ -25,12 +25,14 @@ const logger = async (req, res, next) => {
   const start = Date.now();
   console.log(
     'Request from : ',
-    req.host,
-    req.originalUrl,
+    req.hostname,
+    req.url,
     'IP Address: ',
     req.ip,
     'Timestamp: ',
-    new Date()
+    new Date(),
+    'Method: ',
+    req.method
   );
   res.on('finish', () => {
     const end = Date.now();
@@ -40,11 +42,24 @@ const logger = async (req, res, next) => {
   next();
 };
 
+// verify token
+const verifyToken = (req, res, next) => {
+  const token = req?.cookies?.token;
+  if (!token) {
+    return res.status(401).send({ message: 'unauthorized access' });
+  }
+  jwt.verify(token, process.env.TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: 'unauthorized access' });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
 app.get('/', (req, res) => {
   res.send('Product Data Will Add Soon');
 });
-console.log(process.env.DB_USER);
-console.log(process.env.DB_PASS);
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.omvipub.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -61,7 +76,7 @@ app.post('/jwt', logger, async (req, res) => {
   const user = req.body;
   console.log('User uid : ', user);
   const token = jwt.sign(user, process.env.TOKEN_SECRET, { expiresIn: '1h' });
-  console.log('Token for uid: ', token);
+  console.log('New Token Generated: ', token);
   res
     .cookie('token', token, {
       httpOnly: true,
@@ -69,6 +84,12 @@ app.post('/jwt', logger, async (req, res) => {
       sameSite: 'lax',
     })
     .send({ success: true });
+});
+
+// clear cookie on logout
+app.post('/logout', async (req, res) => {
+  const user = req.body;
+  res.clearCookie('token', { maxAge: 0 }).send({ success: true });
 });
 
 async function run() {
@@ -151,11 +172,20 @@ async function run() {
       const result = await cartCollection.insertOne(newCart);
       res.send(result);
     });
+    // get all addedCart data
+    app.get('/addedCart', logger, async (req, res) => {
+      const cursor = cartCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
     // get cart item by userId
-    app.get('/addedCart/:userId', async (req, res) => {
+    app.get('/addedCart/:userId', logger, verifyToken, async (req, res) => {
       const userId = req.params.userId;
-      const query = { userId: userId };
+      if (userId !== req.user.userId) {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
 
+      const query = { userId: userId };
       try {
         const cursor = cartCollection.find(query);
         const result = await cursor.toArray();
