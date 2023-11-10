@@ -15,6 +15,7 @@ app.use(
       'https://fashion-and-apparel-house.web.app/',
     ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   })
 );
 app.use(express.json());
@@ -80,8 +81,8 @@ app.post('/jwt', logger, async (req, res) => {
   res
     .cookie('token', token, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
     })
     .send({ success: true });
 });
@@ -89,7 +90,14 @@ app.post('/jwt', logger, async (req, res) => {
 // clear cookie on logout
 app.post('/logout', async (req, res) => {
   const user = req.body;
-  res.clearCookie('token', { maxAge: 0 }).send({ success: true });
+  res
+    .clearCookie('token', {
+      maxAge: 0,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+    })
+    .send({ success: true });
 });
 
 async function run() {
