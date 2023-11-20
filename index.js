@@ -263,14 +263,7 @@ async function run() {
     // clear cookie on logout
     app.post('/logout', async (req, res) => {
       const user = req.body;
-      res
-        .clearCookie('token', {
-          maxAge: 0,
-          httpOnly: true,
-          secure: false,
-          sameSite: 'lax',
-        })
-        .send({ success: true });
+      res.send({ success: true });
     });
 
     // user related api //
