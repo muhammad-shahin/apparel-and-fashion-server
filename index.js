@@ -4,16 +4,14 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const app = express();
 const port = process.env.port || 5000;
 
 // middleware
 app.use(
   cors({
-    origin: [
-      'http://localhost:5173',
-      'https://fashion-and-apparel-house.web.app/',
-    ],
+    origin: 'https://fashion-and-apparel-house.web.app',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   })
@@ -45,11 +43,12 @@ const logger = async (req, res, next) => {
 
 // verify token
 const verifyToken = (req, res, next) => {
-  const token = req?.cookies?.token;
-  if (!token) {
+  // const token = req?.cookies?.token;
+  const accessToken = req.headers.authorization.split(' ')[1];
+  if (!accessToken) {
     return res.status(401).send({ message: 'unauthorized access' });
   }
-  jwt.verify(token, process.env.TOKEN_SECRET, (err, decoded) => {
+  jwt.verify(accessToken, process.env.TOKEN_SECRET, (err, decoded) => {
     if (err) {
       return res.status(401).send({ message: 'unauthorized access' });
     }
@@ -72,34 +71,6 @@ const client = new MongoClient(uri, {
   },
 });
 
-// generate token on authentication
-app.post('/jwt', logger, async (req, res) => {
-  const user = req.body;
-  console.log('User uid : ', user);
-  const token = jwt.sign(user, process.env.TOKEN_SECRET, { expiresIn: '1h' });
-  console.log('New Token Generated: ', token);
-  res
-    .cookie('token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-    })
-    .send({ success: true });
-});
-
-// clear cookie on logout
-app.post('/logout', async (req, res) => {
-  const user = req.body;
-  res
-    .clearCookie('token', {
-      maxAge: 0,
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-    })
-    .send({ success: true });
-});
-
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -109,6 +80,9 @@ async function run() {
     const productsCollection = database.collection('allProducts');
     const advertisementCollection = database.collection('brandAdvertisement');
     const cartCollection = database.collection('addedCart');
+    const usersCollection = database.collection('usersCollection');
+
+    // products related api //
 
     // create post for store new product
     app.post('/products', async (req, res) => {
@@ -176,18 +150,17 @@ async function run() {
     // store add to cart data by userID
     app.post('/addedCart', async (req, res) => {
       const newCart = req.body;
-      console.log('New Cart Item Added: ', newCart);
       const result = await cartCollection.insertOne(newCart);
       res.send(result);
     });
     // get all addedCart data
-    app.get('/addedCart', logger, async (req, res) => {
+    app.get('/addedCart', async (req, res) => {
       const cursor = cartCollection.find();
       const result = await cursor.toArray();
       res.send(result);
     });
     // get cart item by userId
-    app.get('/addedCart/:userId', logger, verifyToken, async (req, res) => {
+    app.get('/addedCart/:userId', verifyToken, async (req, res) => {
       const userId = req.params.userId;
       if (userId !== req.user.userId) {
         return res.status(403).send({ message: 'forbidden access' });
@@ -246,6 +219,82 @@ async function run() {
       const id = req.params.cartId;
       const query = { _id: new ObjectId(id) };
       const result = await cartCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    /*
+     checkout (stripe payment) related api 
+    */
+
+    app.post('/create-payment-intent', async (req, res) => {
+      const { price } = req.body;
+      const ammount = parseInt(price * 100);
+
+      // Create a PaymentIntent with the order amount and currency
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: ammount,
+          currency: 'usd',
+          payment_method_types: ['card'],
+        });
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send('Internal server error');
+      }
+    });
+
+    /*
+     token related api 
+    */
+
+    // generate token on authentication
+    app.post('/jwt', async (req, res) => {
+      const user = req.body;
+      console.log('User uid : ', user);
+      const token = jwt.sign(user, process.env.TOKEN_SECRET, {
+        expiresIn: '30d',
+      });
+      res.send({ success: true, token: `Bearer ${token}` });
+    });
+
+    // clear cookie on logout
+    app.post('/logout', async (req, res) => {
+      const user = req.body;
+      res
+        .clearCookie('token', {
+          maxAge: 0,
+          httpOnly: true,
+          secure: false,
+          sameSite: 'lax',
+        })
+        .send({ success: true });
+    });
+
+    // user related api //
+
+    // post user data on registration
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      const userId = user.userId;
+      console.log('USer id from users endpoint: ', userId);
+      const query = { userId: userId };
+      const isRegistered = await usersCollection.findOne(query);
+      console.log('isRegisterd : ', isRegistered);
+      if (isRegistered) {
+        return res.send({ message: 'user already registered' });
+      }
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    // get user data by userId
+    app.get('/users/:userId', async (req, res) => {
+      const userId = req.params.userId;
+      const filter = { userId: userId };
+      const result = await usersCollection.findOne(filter);
       res.send(result);
     });
 
